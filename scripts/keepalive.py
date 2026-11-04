@@ -10,15 +10,19 @@ import urllib.error
 import urllib.request
 
 DEFAULT_URL = "https://cred-manager.blitz48.blitz.cloud/api/health"
-DEFAULT_INTERVAL = 600  # 10 minutes (Blitz sleeps after 15 minutes of inactivity)
+DEFAULT_INTERVAL = 180  # 3 minutes (Blitz sleeps after 15 minutes of inactivity; 3min ensures 5x retry margin)
 
 
-def ping_once(url: str, timeout: int = 30) -> tuple[bool, str]:
+def ping_once(url: str, timeout: int = 15) -> tuple[bool, str]:
+    # Append unique timestamp query param to bypass any CDN edge cache
+    sep = "&" if "?" in url else "?"
+    req_url = f"{url}{sep}_t={int(time.time()*1000)}"
     req = urllib.request.Request(
-        url,
+        req_url,
         headers={
-            "User-Agent": "Blitz-KeepAlive/1.0",
-            "Cache-Control": "no-cache",
+            "User-Agent": "Blitz-KeepAlive/2.0",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
         },
     )
     start = time.time()
@@ -42,7 +46,7 @@ def main():
         help=f"Ping interval in seconds (default: {DEFAULT_INTERVAL}s = 10min)",
     )
     parser.add_argument("--once", action="store_true", help="Send a single keep-alive ping and exit")
-    parser.add_argument("--startup-delay", type=int, default=15, help="Initial delay in seconds before first ping (default: 15s)")
+    parser.add_argument("--startup-delay", type=int, default=5, help="Initial delay in seconds before first ping (default: 5s)")
     args = parser.parse_args()
 
     if args.once:
@@ -58,7 +62,9 @@ def main():
         ok, detail = ping_once(args.url)
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[{now}] {'OK' if ok else 'ERR'} | {detail}", flush=True)
-        time.sleep(args.interval)
+        # If ping failed, retry quicker after 15 seconds instead of waiting full interval
+        sleep_time = args.interval if ok else 15
+        time.sleep(sleep_time)
 
 
 if __name__ == "__main__":

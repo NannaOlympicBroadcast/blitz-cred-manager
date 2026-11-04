@@ -316,24 +316,51 @@ class TempTokenRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Auth & User Endpoints + Container Keep-Alive Status Tracking
+# Auth & User Endpoints + Dual-Layer Keep-Alive Tracking
 # ---------------------------------------------------------------------------
 KEEPALIVE_TARGET_URL = os.environ.get("KEEPALIVE_URL", "https://cred-manager.blitz48.blitz.cloud/api/health")
-KEEPALIVE_INTERVAL_SEC = int(os.environ.get("KEEPALIVE_INTERVAL", "600"))
+KEEPALIVE_INTERVAL_SEC = int(os.environ.get("KEEPALIVE_INTERVAL", "180"))
 KEEPALIVE_STATE: Dict[str, Any] = {
-    "mode": "container-script (/app/scripts/keepalive.py)",
+    "mode": "dual-guard (in-container script + internal asyncio worker)",
     "target_url": KEEPALIVE_TARGET_URL,
     "interval_seconds": KEEPALIVE_INTERVAL_SEC,
     "ping_count": 0,
+    "internal_worker_pings": 0,
     "last_ping_at": None,
     "last_user_agent": None,
 }
 
 
+async def _internal_keepalive_worker():
+    # Stagger 30 seconds after startup so uvicorn is fully serving
+    await asyncio.sleep(30)
+    while True:
+        try:
+            sep = "&" if "?" in KEEPALIVE_TARGET_URL else "?"
+            t_url = f"{KEEPALIVE_TARGET_URL}{sep}_w=asyncio&_t={int(time.time()*1000)}"
+            def _ping():
+                req = urllib.request.Request(
+                    t_url,
+                    headers={"User-Agent": "Blitz-KeepAlive-Worker/1.0", "Cache-Control": "no-cache"},
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    return resp.status
+            status = await asyncio.to_thread(_ping)
+            KEEPALIVE_STATE["internal_worker_pings"] += 1
+        except Exception:
+            pass
+        await asyncio.sleep(KEEPALIVE_INTERVAL_SEC)
+
+
+@app.on_event("startup")
+async def start_keepalive_coroutine():
+    asyncio.create_task(_internal_keepalive_worker())
+
+
 @app.get("/api/health")
 def health_check(request: Request):
     ua = request.headers.get("user-agent", "")
-    if "KeepAlive" in ua or request.query_params.get("source") == "keepalive":
+    if "KeepAlive" in ua or request.query_params.get("source") == "keepalive" or "_w" in request.query_params:
         KEEPALIVE_STATE["ping_count"] += 1
         KEEPALIVE_STATE["last_ping_at"] = now_iso()
         KEEPALIVE_STATE["last_user_agent"] = ua

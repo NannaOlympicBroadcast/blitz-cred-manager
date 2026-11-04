@@ -108,8 +108,10 @@ Blitz.cloud 免费版默认在 **15 分钟无公网访问**后将容器置为休
   ```dockerfile
   CMD ["sh", "-c", "python /app/scripts/keepalive.py --url ${KEEPALIVE_URL} --interval ${KEEPALIVE_INTERVAL} & exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
   ```
-- **工作原理**：容器启动后，`/app/scripts/keepalive.py` 在容器内作为守护进程运行，每 **10 分钟（600 秒）** 向公网地址 `https://cred-manager.blitz48.blitz.cloud/api/health` 发起一次 HTTPS 请求，经由 Blitz 边缘网关回环访问自身以刷新 `lastTrafficAt`。
-- **状态查询接口**：访问 `GET https://cred-manager.blitz48.blitz.cloud/api/keepalive/status` 可实时查看容器内保活脚本的累计 Ping 次数（`ping_count`）与最近一次触发时间（`last_ping_at`）。
+- **工作原理**：
+  - **进程外独立脚本守护**：`/app/scripts/keepalive.py` 在容器后台常驻，每 **180 秒（3 分钟）** 向公网地址发起 HTTPS 探测（自动携带防缓存时间戳 `_t=...`），失败时 15 秒内自动退避重试；
+  - **进程内异步协程兜底**：FastAPI 后台协程 `_internal_keepalive_worker` 同样以 180 秒间隔进行公网回环保活，双层冗余，彻底避免单一进程异常导致保活中断。
+- **状态查询接口**：访问 `GET https://cred-manager.blitz48.blitz.cloud/api/keepalive/status` 可实时查看容器内保活脚本与内部 Worker 的累计 Ping 次数（`ping_count`）与最近一次触发时间（`last_ping_at`）。
 
 ---
 

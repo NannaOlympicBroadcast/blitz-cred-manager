@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DATA_DIR=/app/data \
     PORT=8000 \
     KEEPALIVE_URL=https://cred-manager.blitz48.blitz.cloud/api/health \
-    KEEPALIVE_INTERVAL=600
+    KEEPALIVE_INTERVAL=180
 
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
