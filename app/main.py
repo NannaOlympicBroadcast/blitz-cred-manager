@@ -746,7 +746,7 @@ def cli_pull_file(filename: str, token_row: sqlite3.Row = Depends(verify_temp_to
 def serve_install_sh(request: Request):
     base_url = get_public_base_url(request)
     script_path = CLI_DIR / "install.sh"
-    content = script_path.read_text(encoding="utf-8").replace("__DEFAULT_SERVER_URL__", base_url)
+    content = script_path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("__DEFAULT_SERVER_URL__", base_url)
     return PlainTextResponse(content, media_type="text/x-shellscript")
 
 
@@ -762,7 +762,7 @@ def serve_install_ps1(request: Request):
 def serve_cred_cli_py(request: Request):
     base_url = get_public_base_url(request)
     script_path = CLI_DIR / "cred-cli.py"
-    content = script_path.read_text(encoding="utf-8").replace("__DEFAULT_SERVER_URL__", base_url)
+    content = script_path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("__DEFAULT_SERVER_URL__", base_url)
     return PlainTextResponse(content, media_type="text/x-python")
 
 
