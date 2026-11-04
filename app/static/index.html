@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blitz Credential Manager — 凭据管理器 & Remote MCP</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background-color: #0b0f19;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .glass {
+      background: rgba(17, 24, 39, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(51, 65, 85, 0.6);
+    }
+    pre, code {
+      font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+  <!-- Top Bar -->
+  <header class="border-b border-slate-800 bg-slate-900/80 sticky top-0 z-30 backdrop-blur">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/30">
+          🔐
+        </div>
+        <div>
+          <h1 class="font-bold text-lg text-white leading-tight">Blitz Credential Manager</h1>
+          <p class="text-xs text-slate-400">环境变量 & 凭据文件管理 · Remote MCP Server · CLI 临时令牌</p>
+        </div>
+      </div>
+      <div id="nav-user-area" class="hidden items-center gap-3">
+        <span id="nav-username" class="text-sm px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-indigo-300 font-medium"></span>
+        <button onclick="openPasswordModal()" class="text-xs px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition">
+          修改密码
+        </button>
+        <button onclick="logout()" class="text-xs px-3 py-1.5 rounded bg-rose-950/60 hover:bg-rose-900/70 border border-rose-800/60 text-rose-300 transition">
+          退出登录
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed bottom-5 right-5 z-50 hidden px-4 py-3 rounded-lg shadow-xl border text-sm font-medium transition-all"></div>
+
+  <!-- Auth Section (Login / Register) -->
+  <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
+    <div id="auth-view" class="max-w-md mx-auto mt-8 glass rounded-2xl p-6 shadow-2xl">
+      <div class="flex border-b border-slate-800 mb-6">
+        <button id="tab-login-btn" onclick="switchAuthTab('login')" class="flex-1 pb-3 text-sm font-semibold border-b-2 border-indigo-500 text-indigo-400">
+          账号登录
+        </button>
+        <button id="tab-register-btn" onclick="switchAuthTab('register')" class="flex-1 pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200">
+          邀请码注册
+        </button>
+      </div>
+
+      <!-- Login Form -->
+      <form id="login-form" onsubmit="handleLogin(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">用户名</label>
+          <input id="login-username" type="text" required placeholder="admin 或注册用户名"
+            class="w-full px-3.5 py-2.5 rounded-lg bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">登录密码</label>
+          <input id="login-password" type="password" required placeholder="输入密码"
+            class="w-full px-3.5 py-2.5 rounded-lg bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-indigo-500" />
+        </div>
+        <button type="submit" class="w-full py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/25 transition">
+          立即登录
+        </button>
+      </form>
+
+      <!-- Register Form -->
+      <form id="register-form" onsubmit="handleRegister(event)" class="space-y-4 hidden">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">用户名</label>
+          <input id="reg-username" type="text" required placeholder="设置您的用户名 (2-32位)"
+            class="w-full px-3.5 py-2.5 rounded-lg bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">设置密码</label>
+          <input id="reg-password" type="password" required placeholder="设置登录密码 (至少4位)"
+            class="w-full px-3.5 py-2.5 rounded-lg bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">邀请码 (必填)</label>
+          <input id="reg-invite" type="text" required placeholder="请输入邀请码 (例如 snh48ssr)"
+            class="w-full px-3.5 py-2.5 rounded-lg bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-indigo-500" />
+        </div>
+        <button type="submit" class="w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm shadow-lg shadow-emerald-600/25 transition">
+          验证邀请码并注册
+        </button>
+      </form>
+
+      <!-- Quick CLI Download Banner even before login -->
+      <div class="mt-6 pt-5 border-t border-slate-800/80 text-xs text-slate-400 space-y-2">
+        <div class="font-semibold text-slate-300">🛠️ AI Agent 命令行工具 (cred-cli) 快速安装：</div>
+        <div class="bg-slate-950 p-2.5 rounded border border-slate-800 font-mono text-[11px] text-indigo-300 overflow-x-auto">
+          curl -fsSL <span class="server-origin"></span>/cli/install.sh | sh
+        </div>
+        <div class="flex flex-wrap gap-2 pt-1">
+          <a href="/cli/cred-cli-linux-amd64" class="underline hover:text-indigo-400">Linux-x64</a> ·
+          <a href="/cli/cred-cli-windows-amd64.exe" class="underline hover:text-indigo-400">Windows-x64.exe</a> ·
+          <a href="/cli/cred-cli-darwin-arm64" class="underline hover:text-indigo-400">macOS-ARM64</a> ·
+          <a href="/cli/cred-cli.py" class="underline hover:text-indigo-400">cred-cli.py</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Dashboard View -->
+    <div id="dashboard-view" class="hidden space-y-6">
+      <!-- Navigation Tabs -->
+      <div class="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
+        <button onclick="switchDashTab('env')" id="dtab-env" class="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white">
+          🔑 环境变量凭据 (Env Vars)
+        </button>
+        <button onclick="switchDashTab('files')" id="dtab-files" class="px-4 py-2 rounded-lg text-sm font-medium bg-slate-900 text-slate-300 hover:bg-slate-800">
+          📄 凭据文件 (Cookies / Configs)
+        </button>
+        <button onclick="switchDashTab('mcp')" id="dtab-mcp" class="px-4 py-2 rounded-lg text-sm font-medium bg-slate-900 text-slate-300 hover:bg-slate-800">
+          🤖 Remote MCP & CLI 接入
+        </button>
+      </div>
+
+      <!-- TAB 1: Environment Variables -->
+      <section id="panel-env" class="space-y-6">
+        <div class="grid md:grid-cols-3 gap-6">
+          <!-- Add / Update Single Env -->
+          <div class="glass rounded-xl p-5 space-y-4">
+            <h2 class="font-semibold text-base text-white flex items-center justify-between">
+              <span>添加 / 更新环境变量</span>
+              <button onclick="openBulkEnvModal()" class="text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700">
+                批量导入 .env
+              </button>
+            </h2>
+            <form onsubmit="handleSaveEnv(event)" class="space-y-3">
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">变量名 (KEY)</label>
+                <input id="env-key" type="text" required placeholder="例如 OPENAI_API_KEY"
+                  class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-sm font-mono text-white focus:outline-none focus:border-indigo-500" />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">变量值 (VALUE)</label>
+                <textarea id="env-value" rows="3" required placeholder="输入密钥或凭据内容..."
+                  class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-sm font-mono text-white focus:outline-none focus:border-indigo-500"></textarea>
+              </div>
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">备注说明 (可选)</label>
+                <input id="env-desc" type="text" placeholder="用途说明"
+                  class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              </div>
+              <button type="submit" class="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition">
+                保存环境变量凭据
+              </button>
+            </form>
+          </div>
+
+          <!-- Env List -->
+          <div class="md:col-span-2 glass rounded-xl p-5 flex flex-col">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="font-semibold text-base text-white">已存储的环境变量 (<span id="env-count">0</span>)</h2>
+              <button onclick="loadEnvList()" class="text-xs px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300">刷新</button>
+            </div>
+            <div id="env-list-container" class="space-y-2.5 flex-1 overflow-y-auto max-h-[500px]"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: Credential Files -->
+      <section id="panel-files" class="hidden space-y-6">
+        <div class="grid md:grid-cols-3 gap-6">
+          <!-- Upload / Create File -->
+          <div class="glass rounded-xl p-5 space-y-5">
+            <div>
+              <h2 class="font-semibold text-base text-white mb-3">📤 上传本地凭据文件</h2>
+              <form onsubmit="handleUploadFile(event)" class="space-y-3">
+                <input id="file-input" type="file" required
+                  class="block w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500" />
+                <div>
+                  <label class="block text-xs text-slate-400 mb-1">自定义文件名 (可选，留空用原文件名)</label>
+                  <input id="file-custom-name" type="text" placeholder="如 cookies.txt 或 config.json"
+                    class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-sm font-mono text-white" />
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-400 mb-1">备注说明 (可选)</label>
+                  <input id="file-desc" type="text" placeholder="如：B站/口袋48登录Cookie"
+                    class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-sm text-white" />
+                </div>
+                <button type="submit" class="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition">
+                  上传凭据文件
+                </button>
+              </form>
+            </div>
+
+            <div class="border-t border-slate-800 pt-4">
+              <h3 class="font-semibold text-sm text-white mb-2">✏️ 或在线编写 / 粘贴凭据文件</h3>
+              <button onclick="openFileEditorModal()" class="w-full py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-indigo-300 text-xs font-semibold transition">
+                + 在线新建 / 编辑 (cookies.txt / config.json)
+              </button>
+            </div>
+          </div>
+
+          <!-- File List -->
+          <div class="md:col-span-2 glass rounded-xl p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="font-semibold text-base text-white">已存储的凭据文件 (<span id="files-count">0</span>)</h2>
+              <button onclick="loadFilesList()" class="text-xs px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300">刷新</button>
+            </div>
+            <div id="files-list-container" class="space-y-3 max-h-[520px] overflow-y-auto"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: Remote MCP & CLI Integration -->
+      <section id="panel-mcp" class="hidden space-y-6">
+        <div class="grid md:grid-cols-2 gap-6">
+          <!-- Remote MCP Config -->
+          <div class="glass rounded-xl p-5 space-y-4">
+            <h2 class="font-semibold text-base text-white">🔌 Remote MCP 接口配置 (供 AI Agents 连接)</h2>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              支持 Streamable HTTP (<code class="text-indigo-300">/mcp</code>) 与 SSE (<code class="text-indigo-300">/sse</code>) 协议。AI Agent 连接后通过调用 <code class="text-emerald-300">get_temp_token</code> 获取临时令牌，再使用 <code class="text-emerald-300">cred-cli</code> 拉取凭据或凭据文件。
+            </p>
+            <div class="space-y-2 text-xs">
+              <label class="block text-slate-400">专属 Streamable HTTP MCP 地址 (隔离绑定当前账号)：</label>
+              <div class="flex gap-2">
+                <input id="mcp-url-scoped" readonly class="flex-1 px-3 py-2 rounded bg-slate-950 border border-slate-800 font-mono text-indigo-300" />
+                <button onclick="copyInput('mcp-url-scoped')" class="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-white">复制</button>
+              </div>
+              <label class="block text-slate-400 pt-1">通用 Streamable HTTP MCP 地址：</label>
+              <div class="flex gap-2">
+                <input id="mcp-url-default" readonly class="flex-1 px-3 py-2 rounded bg-slate-950 border border-slate-800 font-mono text-slate-300" />
+                <button onclick="copyInput('mcp-url-default')" class="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-white">复制</button>
+              </div>
+              <label class="block text-slate-400 pt-1">SSE MCP 地址：</label>
+              <div class="flex gap-2">
+                <input id="mcp-url-sse" readonly class="flex-1 px-3 py-2 rounded bg-slate-950 border border-slate-800 font-mono text-slate-300" />
+                <button onclick="copyInput('mcp-url-sse')" class="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-white">复制</button>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Claude Code / Cursor / Antigravity MCP 配置示例：</label>
+              <pre id="mcp-json-snippet" class="p-3 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-emerald-300 overflow-x-auto"></pre>
+            </div>
+          </div>
+
+          <!-- CLI Install & Temp Token Generator -->
+          <div class="glass rounded-xl p-5 space-y-4">
+            <h2 class="font-semibold text-base text-white">⚡ CLI 安装与临时 Token 测试</h2>
+            <div class="space-y-2 text-xs">
+              <div class="font-medium text-slate-300">1. 安装 <code class="text-indigo-300">cred-cli</code> (Blitz 前端或 GitHub 仓库)：</div>
+              <div class="p-2.5 rounded bg-slate-950 border border-slate-800 font-mono text-[11px] text-indigo-300 overflow-x-auto" id="cli-install-bash"></div>
+              <div class="p-2.5 rounded bg-slate-950 border border-slate-800 font-mono text-[11px] text-sky-300 overflow-x-auto" id="cli-install-ps1"></div>
+              <div class="flex flex-wrap gap-2 pt-1 text-[11px]">
+                <span class="text-slate-400">直接下载二进制：</span>
+                <a href="/cli/cred-cli-linux-amd64" class="text-indigo-400 hover:underline">Linux-amd64</a>
+                <a href="/cli/cred-cli-linux-arm64" class="text-indigo-400 hover:underline">Linux-arm64</a>
+                <a href="/cli/cred-cli-windows-amd64.exe" class="text-indigo-400 hover:underline">Windows-amd64.exe</a>
+                <a href="/cli/cred-cli-darwin-arm64" class="text-indigo-400 hover:underline">macOS-arm64</a>
+                <a href="/cli/cred-cli.py" class="text-indigo-400 hover:underline">cred-cli.py</a>
+                <a id="github-repo-link" href="#" target="_blank" class="text-emerald-400 hover:underline ml-auto">📦 GitHub 仓库 ↗</a>
+              </div>
+            </div>
+
+            <div class="border-t border-slate-800 pt-4 space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-medium text-slate-300">2. 手动签发临时 Token (<code class="text-amber-300">ctk_...</code>) 测试拉取：</span>
+                <button onclick="generateTempTokenUI()" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold transition">
+                  生成临时 Token (15分钟有效)
+                </button>
+              </div>
+              <div id="temp-token-box" class="hidden space-y-2">
+                <div class="text-xs text-amber-300 font-mono break-all bg-slate-950 p-2.5 rounded border border-amber-800/60" id="temp-token-val"></div>
+                <pre id="temp-token-cmds" class="p-3 rounded bg-slate-950 border border-slate-800 text-[11px] text-slate-200 overflow-x-auto"></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Modal: Change Password -->
+  <div id="password-modal" class="fixed inset-0 bg-black/70 z-40 hidden items-center justify-center p-4">
+    <div class="glass rounded-xl max-w-sm w-full p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold text-white">修改登录密码</h3>
+        <button onclick="closePasswordModal()" class="text-slate-400 hover:text-white">✕</button>
+      </div>
+      <form onsubmit="handleChangePassword(event)" class="space-y-3">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">当前密码</label>
+          <input id="cp-old" type="password" required class="w-full px-3 py-2 rounded bg-slate-950 border border-slate-800 text-sm text-white" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">新密码 (至少4位)</label>
+          <input id="cp-new" type="password" required class="w-full px-3 py-2 rounded bg-slate-950 border border-slate-800 text-sm text-white" />
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="closePasswordModal()" class="px-3 py-1.5 rounded bg-slate-800 text-xs text-slate-300">取消</button>
+          <button type="submit" class="px-4 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white">确认修改</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Bulk .env Import -->
+  <div id="bulk-env-modal" class="fixed inset-0 bg-black/70 z-40 hidden items-center justify-center p-4">
+    <div class="glass rounded-xl max-w-lg w-full p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold text-white">批量导入 .env 环境变量</h3>
+        <button onclick="closeBulkEnvModal()" class="text-slate-400 hover:text-white">✕</button>
+      </div>
+      <form onsubmit="handleBulkEnvImport(event)" class="space-y-3">
+        <textarea id="bulk-env-text" rows="8" required placeholder="KEY1=VALUE1&#10;KEY2=&quot;VALUE2&quot;&#10;# 支持注释和标准 .env 格式"
+          class="w-full p-3 rounded bg-slate-950 border border-slate-800 text-xs font-mono text-white"></textarea>
+        <div class="flex justify-end gap-2">
+          <button type="button" onclick="closeBulkEnvModal()" class="px-3 py-1.5 rounded bg-slate-800 text-xs text-slate-300">取消</button>
+          <button type="submit" class="px-4 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white">解析并导入</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Online File Editor -->
+  <div id="file-editor-modal" class="fixed inset-0 bg-black/70 z-40 hidden items-center justify-center p-4">
+    <div class="glass rounded-xl max-w-2xl w-full p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold text-white">在线创建 / 编辑凭据文件</h3>
+        <button onclick="closeFileEditorModal()" class="text-slate-400 hover:text-white">✕</button>
+      </div>
+      <form onsubmit="handleSaveOnlineFile(event)" class="space-y-3">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">文件名 (如 cookies.txt / config.json)</label>
+            <input id="editor-filename" type="text" required placeholder="config.json"
+              class="w-full px-3 py-2 rounded bg-slate-950 border border-slate-800 text-sm font-mono text-white" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">备注说明</label>
+            <input id="editor-desc" type="text" placeholder="配置文件或 Cookie"
+              class="w-full px-3 py-2 rounded bg-slate-950 border border-slate-800 text-sm text-white" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">文件内容</label>
+          <textarea id="editor-content" rows="12" required placeholder="在此粘贴 JSON 配置、Cookie 字符串、SSH 私钥等文本内容..."
+            class="w-full p-3 rounded bg-slate-950 border border-slate-800 text-xs font-mono text-white"></textarea>
+        </div>
+        <div class="flex justify-end gap-2">
+          <button type="button" onclick="closeFileEditorModal()" class="px-3 py-1.5 rounded bg-slate-800 text-xs text-slate-300">取消</button>
+          <button type="submit" class="px-4 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white">保存凭据文件</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let authToken = localStorage.getItem('blitz_cred_token') || '';
+    let currentUser = null;
+    let envItemsCache = [];
+    let fileItemsCache = [];
+    let revealedKeys = {};
+
+    document.querySelectorAll('.server-origin').forEach(el => {
+      el.textContent = window.location.origin;
+    });
+
+    function showToast(msg, isError = false) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = `fixed bottom-5 right-5 z-50 px-4 py-3 rounded-lg shadow-xl border text-sm font-medium ${
+        isError ? 'bg-rose-950 border-rose-700 text-rose-200' : 'bg-emerald-950 border-emerald-700 text-emerald-200'
+      }`;
+      t.classList.remove('hidden');
+      setTimeout(() => t.classList.add('hidden'), 3500);
+    }
+
+    async function apiFetch(path, options = {}) {
+      const headers = options.headers || {};
+      if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+      }
+      if (!(options.body instanceof FormData) && options.body && !headers['Content-Type']) {
+        headers['Content-Type'] = 'application/json';
+      }
+      const res = await fetch(path, { ...options, headers });
+      if (res.status === 401 && path !== '/api/auth/login') {
+        logout();
+        throw new Error('登录已过期，请重新登录');
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.detail || `请求失败 (${res.status})`);
+      }
+      return data;
+    }
+
+    function switchAuthTab(tab) {
+      const isLogin = tab === 'login';
+      document.getElementById('login-form').classList.toggle('hidden', !isLogin);
+      document.getElementById('register-form').classList.toggle('hidden', isLogin);
+      document.getElementById('tab-login-btn').className = isLogin
+        ? 'flex-1 pb-3 text-sm font-semibold border-b-2 border-indigo-500 text-indigo-400'
+        : 'flex-1 pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400';
+      document.getElementById('tab-register-btn').className = !isLogin
+        ? 'flex-1 pb-3 text-sm font-semibold border-b-2 border-emerald-500 text-emerald-400'
+        : 'flex-1 pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400';
+    }
+
+    function switchDashTab(tab) {
+      ['env', 'files', 'mcp'].forEach(t => {
+        document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== tab);
+        document.getElementById(`dtab-${t}`).className = t === tab
+          ? 'px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white'
+          : 'px-4 py-2 rounded-lg text-sm font-medium bg-slate-900 text-slate-300 hover:bg-slate-800';
+      });
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      try {
+        const username = document.getElementById('login-username').value;
+        const password = document.getElementById('login-password').value;
+        const res = await apiFetch('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ username, password }),
+        });
+        authToken = res.token;
+        localStorage.setItem('blitz_cred_token', authToken);
+        showToast('登录成功');
+        await initDashboard();
+      } catch (err) {
+        showToast(err.message, true);
+      }
+    }
+
+    async function handleRegister(e) {
+      e.preventDefault();
+      try {
+        const username = document.getElementById('reg-username').value;
+        const password = document.getElementById('reg-password').value;
+        const invite_code = document.getElementById('reg-invite').value;
+        const res = await apiFetch('/api/auth/register', {
+          method: 'POST',
+          body: JSON.stringify({ username, password, invite_code }),
+        });
+        authToken = res.token;
+        localStorage.setItem('blitz_cred_token', authToken);
+        showToast('注册成功，已自动登录');
+        await initDashboard();
+      } catch (err) {
+        showToast(err.message, true);
+      }
+    }
+
+    function logout() {
+      authToken = '';
+      currentUser = null;
+      localStorage.removeItem('blitz_cred_token');
+      document.getElementById('auth-view').classList.remove('hidden');
+      document.getElementById('dashboard-view').classList.add('hidden');
+      document.getElementById('nav-user-area').classList.add('hidden');
+    }
+
+    async function initDashboard() {
+      if (!authToken) return;
+      try {
+        const me = await apiFetch('/api/me');
+        currentUser = me;
+        document.getElementById('auth-view').classList.add('hidden');
+        document.getElementById('dashboard-view').classList.remove('hidden');
+        const navArea = document.getElementById('nav-user-area');
+        navArea.classList.remove('hidden');
+        navArea.classList.add('flex');
+        document.getElementById('nav-username').textContent = `${me.username}${me.is_admin ? ' (管理员)' : ''}`;
+
+        // Populate MCP info
+        document.getElementById('mcp-url-scoped').value = me.mcp_endpoints.streamable_http;
+        document.getElementById('mcp-url-default').value = me.mcp_endpoints.streamable_http_default;
+        document.getElementById('mcp-url-sse').value = me.mcp_endpoints.sse;
+        document.getElementById('mcp-json-snippet').textContent = JSON.stringify({
+          mcpServers: {
+            "blitz-cred-manager": {
+              url: me.mcp_endpoints.streamable_http
+            }
+          }
+        }, null, 2);
+        document.getElementById('cli-install-bash').textContent = `# Linux / macOS:\n${me.cli_install.linux_macos_blitz}\n# 或从 GitHub 安装:\n${me.cli_install.linux_macos_github}`;
+        document.getElementById('cli-install-ps1').textContent = `# Windows PowerShell:\n${me.cli_install.windows_ps_blitz}\n# 或从 GitHub 安装:\n${me.cli_install.windows_ps_github}`;
+        document.getElementById('github-repo-link').href = me.github_repo_url;
+
+        await Promise.all([loadEnvList(), loadFilesList()]);
+      } catch (err) {
+        logout();
+      }
+    }
+
+    async function loadEnvList() {
+      const res = await apiFetch('/api/credentials/env');
+      envItemsCache = res.items || [];
+      document.getElementById('env-count').textContent = envItemsCache.length;
+      const container = document.getElementById('env-list-container');
+      if (envItemsCache.length === 0) {
+        container.innerHTML = `<div class="text-xs text-slate-500 py-8 text-center">暂无环境变量凭据，请在左侧添加或批量导入 .env</div>`;
+        return;
+      }
+      container.innerHTML = envItemsCache.map((item, idx) => {
+        const revealed = !!revealedKeys[item.key];
+        const masked = '••••••••••••••••';
+        return `
+          <div class="p-3 rounded-lg bg-slate-950/90 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div class="space-y-1 min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-xs font-bold text-indigo-300">${escapeHtml(item.key)}</span>
+                ${item.description ? `<span class="text-[11px] text-slate-400">(${escapeHtml(item.description)})</span>` : ''}
+              </div>
+              <div class="font-mono text-xs text-slate-300 break-all">${revealed ? escapeHtml(item.value) : masked}</div>
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button onclick="toggleRevealEnv('${escapeJs(item.key)}')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300">
+                ${revealed ? '隐藏' : '显示'}
+              </button>
+              <button onclick="copyEnvVal(${idx})" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300">复制</button>
+              <button onclick="editEnvItem(${idx})" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-indigo-300">编辑</button>
+              <button onclick="deleteEnvItem('${escapeJs(item.key)}')" class="px-2 py-1 rounded bg-rose-950/70 hover:bg-rose-900 text-[11px] text-rose-300">删除</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function toggleRevealEnv(key) {
+      revealedKeys[key] = !revealedKeys[key];
+      loadEnvList();
+    }
+
+    function copyEnvVal(idx) {
+      const item = envItemsCache[idx];
+      if (!item) return;
+      navigator.clipboard.writeText(item.value);
+      showToast(`已复制 ${item.key}`);
+    }
+
+    function editEnvItem(idx) {
+      const item = envItemsCache[idx];
+      if (!item) return;
+      document.getElementById('env-key').value = item.key;
+      document.getElementById('env-value').value = item.value;
+      document.getElementById('env-desc').value = item.description || '';
+    }
+
+    async function handleSaveEnv(e) {
+      e.preventDefault();
+      try {
+        const key = document.getElementById('env-key').value;
+        const value = document.getElementById('env-value').value;
+        const description = document.getElementById('env-desc').value;
+        await apiFetch('/api/credentials/env', {
+          method: 'POST',
+          body: JSON.stringify({ key, value, description }),
+        });
+        document.getElementById('env-key').value = '';
+        document.getElementById('env-value').value = '';
+        document.getElementById('env-desc').value = '';
+        showToast(`环境变量 ${key} 已保存`);
+        await loadEnvList();
+      } catch (err) {
+        showToast(err.message, true);
+      }
+    }
+
+    async function deleteEnvItem(key) {
+      try {
+        await apiFetch(`/api/credentials/env/${encodeURIComponent(key)}`, { method: 'DELETE' });
+        showToast(`已删除 ${key}`);
+        await loadEnvList();
+      } catch (err) {
+        showToast(err.message, true);
+      }
+    }
+
+    async function loadFilesList() {
+      const res = await apiFetch('/api/credentials/files');
+      fileItemsCache = res.items || [];
+      document.getElementById('files-count').textContent = fileItemsCache.length;
+      const container = document.getElementById('files-list-container');
+      if (fileItemsCache.length === 0) {
+        container.innerHTML = `<div class="text-xs text-slate-500 py-8 text-center">暂无凭据文件，可上传 cookies.txt、config.json 等文件或在线编写</div>`;
+        return;
+      }
+      container.innerHTML = fileItemsCache.map((f, idx) => `
+        <div class="p-3.5 rounded-lg bg-slate-950/90 border border-slate-800 space-y-2">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <span class="font-mono text-xs font-bold text-emerald-300">${escapeHtml(f.filename)}</span>
+              <span class="text-[11px] text-slate-500 ml-2">${f.size} bytes</span>
+              ${f.description ? `<span class="text-xs text-slate-400 ml-2">· ${escapeHtml(f.description)}</span>` : ''}
+            </div>
+            <div class="flex items-center gap-1.5">
+              ${f.preview !== null ? `<button onclick="editOnlineFile(${idx})" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-indigo-300">查看/编辑</button>` : ''}
+              <a href="/api/credentials/files/${encodeURIComponent(f.filename)}?token=${encodeURIComponent(authToken)}"
+                 class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200">下载</a>
+              <button onclick="deleteFileItem('${escapeJs(f.filename)}')" class="px-2.5 py-1 rounded bg-rose-950/70 hover:bg-rose-900 text-[11px] text-rose-300">删除</button>
+            </div>
+          </div>
+          ${f.preview !== null ? `<pre class="p-2 rounded bg-slate-900/90 border border-slate-800/80 text-[11px] text-slate-300 max-h-28 overflow-y-auto">${escapeHtml(f.preview.slice(0, 600))}${f.preview.length > 600 ? '\n...(点击查看/编辑完整内容)' : ''}</pre>` : ''}
+        </div>
+      `).join('');
+    }
+
+    async function handleUploadFile(e) {
+      e.preventDefault();
+      try {
+        const fileInput = document.getElementById('file-input');
+        if (!fileInput.files.length) return;
+        const fd = new FormData();
+        fd.append('file', fileInput.files[0]);
+        const customName = document.getElementById('file-custom-name').value.trim();
+        if (customName) fd.append('filename', customName);
+        fd.append('description', document.getElementById('file-desc').value);
+        const res = await apiFetch('/api/credentials/files', { method: 'POST', body: fd });
+        fileInput.value = '';
+        document.getElementById('file-custom-name').value = '';
+        document.getElementById('file-desc').value = '';
+        showToast(`文件 ${res.filename} 上传成功`);
+        await loadFilesList();
+      } catch (err) {
+        showToast(err.message, true);
+      }
+    }
+
+    function openFileEditorModal(filename = '', content = '', desc = '') {
+      document.getElementById('editor-filename').value = filename;
+      document.getElementById('editor-content').value = content;
+      document.getElementById('editor-desc').value = desc;
+      const m = document.getElementById('file-editor-modal');
+      m.classList.remove('hidden');
+      m.classList.add('flex');
+    }
+
+    function closeFileEditorModal() {
+      const m = document.getElementById('file-editor-modal');
+      m.classList.add('hidden');
+      m.classList.remove('flex');
+    }
+
+    function editOnlineFile(idx) {
+      const f = fileItemsCache[idx];
+      if (!f) return;
+      openFileEditorModal(f.filename, f.preview || '', f.description || '');
+    }
+
+    async function handleSaveOnlineFile(e) {
+      e.preventDefault();
+      try {
+        const filename = document.getElementById('editor-filename').value.trim();
+        const content = document.getElementById('editor-content').value;
+        const description = document.getElementById('editor-desc').value;
+        await apiFetch('/api/credentials/files', {
+          method: 'POST',
+          body: JSON.stringify({ filename, content, description }),
+        });
+        closeFileEditorModal();
+        showToast(`凭据文件 ${filename} 已保存`);
+        await loadFilesList();
+      } catch (err) {
+        showToast(err.message, true);
+      }
+    }
+
+    async function deleteFileItem(filename) {
+      try {
+        await apiFetch(`/api/credentials/files/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+        showToast(`已删除文件 ${filename}`);
+        await loadFilesList();
+      } catch (err) {
+        showToast(err.message, true);
+      }
+    }
+
+    function openBulkEnvModal() {
+      const m = document.getElementById('bulk-env-modal');
+      m.classList.remove('hidden');
+      m.classList.add('flex');
+    }
+
+    function closeBulkEnvModal() {
+      const m = document.getElementById('bulk-env-modal');
+      m.classList.add('hidden');
+      m.classList.remove('flex');
+    }
+
+    async function handleBulkEnvImport(e) {
+      e.preventDefault();
+      try {
+        const dotenv = document.getElementById('bulk-env-text').value;
+        const res = await apiFetch('/api/credentials/env/bulk', {
+          method: 'POST',
+          body: JSON.stringify({ dotenv }),
+        });
+        document.getElementById('bulk-env-text').value = '';
+        closeBulkEnvModal();
+        showToast(`成功导入 ${res.imported_count} 个环境变量`);
+        await loadEnvList();
+      } catch (err) {
+        showToast(err.message, true);
+      }
+    }
+
+    function openPasswordModal() {
+      const m = document.getElementById('password-modal');
+      m.classList.remove('hidden');
+      m.classList.add('flex');
+    }
+
+    function closePasswordModal() {
+      const m = document.getElementById('password-modal');
+      m.classList.add('hidden');
+      m.classList.remove('flex');
+    }
+
+    async function handleChangePassword(e) {
+      e.preventDefault();
+      try {
+        const old_password = document.getElementById('cp-old').value;
+        const new_password = document.getElementById('cp-new').value;
+        await apiFetch('/api/auth/change-password', {
+          method: 'POST',
+          body: JSON.stringify({ old_password, new_password }),
+        });
+        document.getElementById('cp-old').value = '';
+        document.getElementById('cp-new').value = '';
+        closePasswordModal();
+        showToast('登录密码修改成功');
+      } catch (err) {
+        showToast(err.message, true);
+      }
+    }
+
+    async function generateTempTokenUI() {
+      try {
+        const res = await apiFetch('/api/tokens/temp', {
+          method: 'POST',
+          body: JSON.stringify({ ttl_minutes: 15 }),
+        });
+        document.getElementById('temp-token-box').classList.remove('hidden');
+        document.getElementById('temp-token-val').textContent = `Token: ${res.token}`;
+        document.getElementById('temp-token-cmds').textContent =
+          `# 1. 查看所有可用凭据:\n${res.commands.list}\n\n` +
+          `# 2. 拉取环境变量到 .env:\n${res.commands.pull_env}\n\n` +
+          `# 3. 拉取指定凭据文件 (如 config.json / cookies.txt):\n${res.commands.pull_file_example}\n\n` +
+          `# 4. 一键拉取全部凭据与文件:\n${res.commands.pull_all}`;
+        showToast('已生成 15 分钟有效期的临时 Token');
+      } catch (err) {
+        showToast(err.message, true);
+      }
+    }
+
+    function copyInput(id) {
+      const val = document.getElementById(id).value;
+      navigator.clipboard.writeText(val);
+      showToast('已复制到剪贴板');
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    function escapeJs(s) {
+      return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    if (authToken) {
+      initDashboard();
+    }
+  </script>
+</body>
+</html>
