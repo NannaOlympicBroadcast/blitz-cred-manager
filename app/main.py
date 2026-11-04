@@ -316,50 +316,27 @@ class TempTokenRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Auth & User Endpoints + Keep-Alive Self-Pinger
+# Auth & User Endpoints + Container Keep-Alive Status Tracking
 # ---------------------------------------------------------------------------
 KEEPALIVE_TARGET_URL = os.environ.get("KEEPALIVE_URL", "https://cred-manager.blitz48.blitz.cloud/api/health")
-KEEPALIVE_INTERVAL_SEC = int(os.environ.get("KEEPALIVE_INTERVAL_SEC", "600"))
+KEEPALIVE_INTERVAL_SEC = int(os.environ.get("KEEPALIVE_INTERVAL", "600"))
 KEEPALIVE_STATE: Dict[str, Any] = {
-    "enabled": True,
+    "mode": "container-script (/app/scripts/keepalive.py)",
     "target_url": KEEPALIVE_TARGET_URL,
     "interval_seconds": KEEPALIVE_INTERVAL_SEC,
     "ping_count": 0,
     "last_ping_at": None,
-    "last_status": None,
+    "last_user_agent": None,
 }
 
 
-async def _self_keepalive_loop():
-    await asyncio.sleep(30)
-    while True:
-        try:
-            def _do_ping():
-                req = urllib.request.Request(
-                    f"{KEEPALIVE_TARGET_URL}?source=self-keepalive",
-                    headers={"User-Agent": "Blitz-Internal-KeepAlive/1.0", "Cache-Control": "no-cache"},
-                )
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    return resp.status
-
-            status_code = await asyncio.to_thread(_do_ping)
-            KEEPALIVE_STATE["ping_count"] += 1
-            KEEPALIVE_STATE["last_ping_at"] = now_iso()
-            KEEPALIVE_STATE["last_status"] = f"HTTP {status_code}"
-        except Exception as e:
-            KEEPALIVE_STATE["last_ping_at"] = now_iso()
-            KEEPALIVE_STATE["last_status"] = f"ERR: {e}"
-        await asyncio.sleep(KEEPALIVE_INTERVAL_SEC)
-
-
-@app.on_event("startup")
-async def start_keepalive_task():
-    if os.environ.get("ENABLE_SELF_KEEPALIVE", "1") != "0":
-        asyncio.create_task(_self_keepalive_loop())
-
-
 @app.get("/api/health")
-def health_check():
+def health_check(request: Request):
+    ua = request.headers.get("user-agent", "")
+    if "KeepAlive" in ua or request.query_params.get("source") == "keepalive":
+        KEEPALIVE_STATE["ping_count"] += 1
+        KEEPALIVE_STATE["last_ping_at"] = now_iso()
+        KEEPALIVE_STATE["last_user_agent"] = ua
     return {"status": "ok", "service": "blitz-cred-manager", "time": now_iso()}
 
 

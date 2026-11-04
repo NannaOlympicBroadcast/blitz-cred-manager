@@ -42,6 +42,7 @@ def main():
         help=f"Ping interval in seconds (default: {DEFAULT_INTERVAL}s = 10min)",
     )
     parser.add_argument("--once", action="store_true", help="Send a single keep-alive ping and exit")
+    parser.add_argument("--startup-delay", type=int, default=15, help="Initial delay in seconds before first ping (default: 15s)")
     args = parser.parse_args()
 
     if args.once:
@@ -50,7 +51,9 @@ def main():
         print(f"[{now}] KeepAlive -> {args.url} | {detail}")
         raise SystemExit(0 if ok else 1)
 
-    print(f"[KeepAlive] Monitoring {args.url} every {args.interval}s (Blitz sleeps after 900s)...")
+    print(f"[KeepAlive] Container daemon started: target={args.url} interval={args.interval}s (initial delay {args.startup_delay}s)...", flush=True)
+    if args.startup_delay > 0:
+        time.sleep(args.startup_delay)
     while True:
         ok, detail = ping_once(args.url)
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
