@@ -34,10 +34,10 @@
 ### 方式一：从 Blitz 应用前端直接安装
 ```bash
 # Linux / macOS
-curl -fsSL <BLITZ_APP_URL>/cli/install.sh | sh
+curl -fsSL https://cred-manager.blitz48.blitz.cloud/cli/install.sh | sh
 
 # Windows PowerShell
-irm <BLITZ_APP_URL>/cli/install.ps1 | iex
+irm https://cred-manager.blitz48.blitz.cloud/cli/install.ps1 | iex
 ```
 
 ### 方式二：从 GitHub 公开仓库安装
@@ -64,7 +64,7 @@ python3 cred-cli.py --help
    {
      "mcpServers": {
        "blitz-cred-manager": {
-         "url": "<BLITZ_APP_URL>/mcp?key=<YOUR_MCP_KEY>"
+         "url": "https://cred-manager.blitz48.blitz.cloud/mcp?key=<YOUR_MCP_KEY>"
        }
      }
    }
@@ -95,12 +95,39 @@ python3 cred-cli.py --help
 
 ---
 
+## 💓 防休眠保活机制 (Keep-Alive) 与配额评估
+
+Blitz.cloud 免费版默认在 **15 分钟无公网访问**后将容器置为休眠状态（`sleepsAfterMinutes: 15`）。本项目提供三重保活机制，且**不会耗尽月度请求次数或运行机时**：
+
+### 1. 配额与机时安全说明
+- **Blitz.cloud 配额模型**：仅限制并发应用数（`5` 个）、并发内存池（`512 MB`，本应用仅占 `128 MB`）、持久化存储（`10 GB`）及代码构建时长（`buildMinutes`: `300 分钟/月`）。**Blitz 不限制每月 HTTP 请求次数，也不限制容器每月在线运行时长**。
+- **GitHub Actions 配额模型**：本仓库为 **Public 公开仓库**，GitHub Actions 对公开仓库提供**免费且无月度分钟数上限**的标准 Runner 执行额度。
+
+### 2. 三重保活方式
+1. **容器内置自保活协程 (`/api/keepalive/status`)**：容器启动后自动每 10 分钟通过公网域名请求 `/api/health?source=self-keepalive`，可通过 `GET /api/keepalive/status` 查看统计。
+2. **GitHub Actions 外部定时保活 ([`.github/workflows/keepalive.yml`](.github/workflows/keepalive.yml))**：每 12 分钟从外部请求一次 `https://cred-manager.blitz48.blitz.cloud/api/health`，即使容器已休眠也能自动唤醒。
+3. **本地/跨平台独立保活脚本 (`scripts/`)**：
+   ```bash
+   # Python 跨平台保活守护进程 (默认每 600 秒 ping 一次)
+   python scripts/keepalive.py
+
+   # Windows PowerShell 保活脚本
+   powershell -ExecutionPolicy Bypass -File scripts/keepalive.ps1
+
+   # Linux / macOS Shell 保活脚本
+   sh scripts/keepalive.sh
+   ```
+
+---
+
 ## 📂 目录结构
 
 ```text
 blitz-cred-manager/
+├── .github/workflows/
+│   └── keepalive.yml      # GitHub Actions 定时外部保活工作流 (每 12 分钟)
 ├── app/
-│   ├── main.py            # FastAPI 后端 + Remote MCP Server (/mcp, /sse) + CLI 分发路由
+│   ├── main.py            # FastAPI 后端 + Remote MCP Server + 内置保活协程
 │   └── static/
 │       └── index.html     # Web 管理控制台前端 (登录/注册/改密/环境变量/凭据文件/MCP配置)
 ├── cli/
@@ -109,6 +136,10 @@ blitz-cred-manager/
 │   ├── install.sh         # Linux / macOS 一键安装脚本
 │   ├── install.ps1        # Windows PowerShell 一键安装脚本
 │   └── bin/               # 预编译跨平台二进制 (Linux/Windows/macOS)
+├── scripts/
+│   ├── keepalive.py       # Python 跨平台防休眠保活脚本
+│   ├── keepalive.ps1      # Windows PowerShell 保活脚本
+│   └── keepalive.sh       # Linux / macOS Shell 保活脚本
 ├── Dockerfile             # Blitz.cloud 容器构建文件 (持久化 /app/data)
 ├── requirements.txt       # Python 依赖
 └── README.md              # 项目文档

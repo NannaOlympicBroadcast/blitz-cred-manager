@@ -1,7 +1,7 @@
 # Blitz Credential Manager CLI Installer (Windows PowerShell)
 $ErrorActionPreference = "Stop"
 
-$ServerUrl = if ($env:CRED_SERVER_URL) { $env:CRED_SERVER_URL } else { "__DEFAULT_SERVER_URL__" }
+$ServerUrl = if ($env:CRED_SERVER_URL) { $env:CRED_SERVER_URL } else { "https://cred-manager.blitz48.blitz.cloud" }
 $GithubRaw = "https://raw.githubusercontent.com/NannaOlympicBroadcast/blitz-cred-manager/main/cli"
 
 $InstallDir = Join-Path $HOME ".local\bin"

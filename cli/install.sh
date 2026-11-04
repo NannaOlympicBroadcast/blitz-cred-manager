@@ -2,7 +2,7 @@
 # Blitz Credential Manager CLI Installer (Linux / macOS)
 set -e
 
-SERVER_URL="${CRED_SERVER_URL:-__DEFAULT_SERVER_URL__}"
+SERVER_URL="${CRED_SERVER_URL:-https://cred-manager.blitz48.blitz.cloud}"
 GITHUB_RAW="https://raw.githubusercontent.com/NannaOlympicBroadcast/blitz-cred-manager/main/cli"
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"

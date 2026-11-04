@@ -13,7 +13,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-DEFAULT_SERVER_URL = "__DEFAULT_SERVER_URL__"
+DEFAULT_SERVER_URL = "https://cred-manager.blitz48.blitz.cloud"
 
 
 def resolve_server_url(explicit_server: str, token: str) -> str:
